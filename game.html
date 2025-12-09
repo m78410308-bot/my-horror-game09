@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Horror Game</title>
+    <style>
+        body {
+            background-color: black;
+            color: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding-top: 100px;
+        }
+        h1 { 
+            color: red; 
+            font-size: 40px;
+        }
+        .btn {
+            background: red;
+            padding: 15px 30px;
+            border: none;
+            color: white;
+            font-size: 22px;
+            cursor: pointer;
+            border-radius: 10px;
+        }
+        .btn:hover {
+            background: darkred;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>Ласкаво просимо до Horror Game</h1>
+    <p>Натисни кнопку, щоб почати гру</p>
+
+    <button class="btn" onclick="startGame()">Почати гру</button>
+
+    <script>
+        function startGame() {
+            window.location.href = "game.html";
+        }
+    </script>
+
+</body>
+</html>
