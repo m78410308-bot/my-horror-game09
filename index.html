@@ -1,41 +1,15 @@
 <!DOCTYPE html>
 <html lang="uk">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>My Horror Game</title>
-    <style>
-        body {
-            background-color: black;
-            color: white;
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding-top: 100px;
-        }
-        h1 { color: red; }
-        .btn {
-            background: red;
-            padding: 10px 20px;
-            border: none;
-            color: white;
-            font-size: 20px;
-            cursor: pointer;
-            border-radius: 8px;
-        }
-        .btn:hover {
-            background: darkred;
-        }
-    </style>
+    <meta charset="UTF-8">
+    <title>Horror Game</title>
 </head>
-<body>
+<body style="background:black; color:red; text-align:center; margin-top:100px; font-family:Arial;">
     <h1>Ласкаво просимо до Horror Game</h1>
-    <p>Натисни кнопку, щоб почати гру</p>
-    <button class="btn" onclick="startGame()">Почати гру</button>
-
-    <script>
-        function startGame() {
-            alert("Гра почалась! (тут буде твоя гра)");
-        }
-    </script>
+    <p>Готова почати гру?</p>
+    <button onclick="alert('Гра ще в розробці!')"
+        style="font-size:24px; padding:15px 40px; background:red; color:white; border:none; cursor:pointer;">
+        Почати гру
+    </button>
 </body>
 </html>
