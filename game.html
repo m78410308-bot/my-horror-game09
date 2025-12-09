@@ -1,28 +1,507 @@
-<!DOCTYPE html>
+html>
 <html lang="uk">
 <head>
-    <meta charset="UTF-8">
-    <title>Horror Game</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Horror Game V4 — Adventure</title>
+<style>
+  html,body { height:100%; margin:0; background:black; color:#eee; font-family:Arial, sans-serif;}
+  #uiTop { position:fixed; top:10px; left:10px; z-index:30; }
+  #title { font-size:20px; color:#ff4d4d; text-shadow:0 0 8px rgba(255,77,77,0.6); margin:0 0 6px 0;}
+  #instructions { font-size:13px; color:#ddd; margin-bottom:6px; }
+  canvas { background:#000; display:block; margin:0 auto; box-shadow:0 0 30px rgba(0,0,0,0.6); }
+  #inventory { position:fixed; top:10px; right:10px; background:rgba(0,0,0,0.6); padding:8px; border-radius:8px; min-width:140px; text-align:left; z-index:40; }
+  #inventory h3 { margin:0 0 6px 0; color:#fff; font-size:14px; }
+  .inv-item { font-size:14px; color:#9ff; margin:4px 0; }
+  #message { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.7); color:#fff; padding:10px 18px; border-radius:8px; z-index:40; display:none;}
+  #startScreen { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; z-index:50; background:rgba(0,0,0,0.7); flex-direction:column; color:white; }
+  .btn { background:#c03232; color:white; padding:10px 18px; border:none; border-radius:8px; cursor:pointer; font-size:18px; margin-top:12px; }
+  .btn:hover { filter:brightness(0.9); }
+  #help { font-size:13px; color:#ddd; margin-top:8px; }
+  footer { position:fixed; bottom:6px; right:8px; color:#666; font-size:12px; z-index:40;}
+</style>
 </head>
-<body style="background-color: black; color: white; text-align: center; font-size: 24px; padding-top: 100px;">
+<body>
+
+<div id="startScreen">
+  <h1 style="color:#ff6666">Horror Quest V4</h1>
+  <p style="max-width:600px; text-align:center; color:#ddd;">Рухайся WASD, E — дії/підняти, F — ліхтар, I — інвентар. Відкрий двері, розгадай код і уникай монстра.</p>
+  <button class="btn" id="startBtn">Почати пригоду</button>
+  <div id="help">Після старту натисни W/A/S/D для руху</div>
+</div>
+
+<div id="uiTop">
+  <div id="title">Покинутий будинок — В4</div>
+  <div id="instructions">WASD / стрілки — рух · E — дія · F — ліхтар · I — інвентар</div>
+</div>
+
+<div id="inventory" style="display:none;">
+  <h3>Інвентар</h3>
+  <div id="invList">(порожній)</div>
+</div>
+
+<canvas id="gameCanvas" width="900" height="520"></canvas>
+<div id="message"></div>
+<footer>Press R to restart</footer>
 
 <script>
-    alert("Ти прокидаєшся в темному лісі. Чути дивні звуки...");
-    let step1 = confirm("Перед тобою дві стежки. Підеш ліворуч?");
-    
-    if(step1){
-        alert("Ти пішов ліворуч і почув шурхіт...");
-        let step2 = confirm("Хочеш перевірити, що це?");
-        
-        if(step2){
-            alert("З кущів вискочив монстр! Ти програв!");
-        } else {
-            alert("Ти тихо пройшов повз... Вітаю! Ти виграв!");
-        }
-    } else {
-        alert("Ти пішов праворуч і провалився в яму. Ти програв!");
-    }
-</script>
+/* ---------- GAME ENGINE (simple) ---------- */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
 
-</body>
-</html>
+const TILE = 48;
+const MAP_W = 20, MAP_H = 11;
+canvas.width = Math.min(window.innerWidth - 20, TILE * MAP_W);
+canvas.height = Math.min(window.innerHeight - 120, TILE * MAP_H);
+
+let scale = canvas.width / (TILE*MAP_W); // optional scaling
+
+// Keyboard
+const keys = {};
+window.addEventListener('keydown', e=> { keys[e.key.toLowerCase()] = true; if(['w','a','s','d','arrowup','arrowleft','arrowdown','arrowright'].includes(e.key.toLowerCase())) e.preventDefault(); });
+window.addEventListener('keyup', e=> { keys[e.key.toLowerCase()] = false; });
+
+document.getElementById('startBtn').onclick = ()=>{ startScreenHide(); initGame(); };
+
+function showMessage(t, ms=2200){ const m = document.getElementById('message'); m.style.display='block'; m.innerText = t; clearTimeout(m._t); m._t = setTimeout(()=> m.style.display='none', ms); }
+
+/* ---------- MAP: 0 floor, 1 wall, 2 door (locked) ---------- */
+let level = [
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,1],
+  [1,0,1,1,1,0,1,1,1,1,1,1,0,1,1,1,1,0,0,1],
+  [1,0,1,0,1,0,1,0,0,0,0,1,0,1,0,0,1,0,0,1],
+  [1,0,1,0,1,0,1,0,1,1,0,1,0,1,0,0,1,1,0,1],
+  [1,0,1,0,0,0,1,0,0,1,0,1,0,0,0,0,0,1,0,1],
+  [1,0,1,1,1,0,1,1,0,1,0,1,1,1,1,0,0,1,0,1],
+  [1,0,0,0,1,0,0,1,0,0,0,0,0,0,1,0,0,0,0,1],
+  [1,0,1,0,1,1,0,1,1,1,0,1,1,0,1,1,1,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+];
+
+let items = [
+  // each: {x,y,type,desc,visible}
+  {x:2,y:1,type:'note',desc:'Записка: "Код двері — 413"', visible:true},
+  {x:10,y:5,type:'key',desc:'Старий ключ', visible:true},
+  {x:3,y:9,type:'battery',desc:'Батарейка до ліхтарика', visible:true}
+];
+
+let player = {x:2.5, y:8.2, r:0.3, speed: 3.2, hasLight:true, lightOn:false};
+let monster = {x:17.2, y:2.5, speed:1.5, state:'patrol', dir:0, lastSeen:null};
+let inventory = [];
+
+let darkness = true; // global darkness (flashlight helps)
+let gameStarted = false;
+let lastTime=0;
+
+/* ---------- UTILS ---------- */
+function toPixels(x){ return x * TILE; }
+function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+function tileBlocked(tx,ty){
+  if(tx<0||ty<0||tx>=MAP_W||ty>=MAP_H) return true;
+  return level[ty][tx] === 1;
+}
+function doorAt(tx,ty){
+  return level[ty][tx] === 2;
+}
+
+/* ---------- GAME LOGIC ---------- */
+function initGame(){
+  gameStarted = true;
+  player.x = 2.5; player.y = 8.2; player.lightOn = false; player.hasLight = true;
+  monster.x = 17.2; monster.y = 2.5; monster.state='patrol'; monster.dir = -1;
+  inventory = [];
+  showMessage('Гра почалась. E - взаємодія, F - ліхтар', 3500);
+  requestAnimationFrame(loop);
+}
+
+function startScreenHide(){ document.getElementById('startScreen').style.display='none'; document.getElementById('inventory').style.display='block'; }
+
+function updateInventoryUI(){
+  const list = document.getElementById('invList');
+  if(inventory.length===0) list.innerText='(порожній)'; else list.innerHTML = inventory.map(i=>`<div class="inv-item">${i}</div>`).join('');
+}
+
+/* collision with map walls */
+function moveEntity(ent, dx, dy){
+  const speed = ent.speed;
+  let nx = ent.x + dx * speed * (1/60);
+  let ny = ent.y + dy * speed * (1/60);
+  // check four corners
+  const corners = [
+    {x:nx-ent.r, y:ny-ent.r},
+    {x:nx+ent.r, y:ny-ent.r},
+    {x:nx-ent.r, y:ny+ent.r},
+    {x:nx+ent.r, y:ny+ent.r}
+  ];
+  for(let c of corners){
+    const tx = Math.floor(c.x), ty = Math.floor(c.y);
+    if(tileBlocked(tx,ty)){ 
+      // cancel movement on collision: simple resolution by stopping in that axis
+      return false;
+    }
+  }
+  ent.x = nx; ent.y = ny;
+  return true;
+}
+
+function checkItemPickup(){
+  for(let it of items){
+    if(!it.visible) continue;
+    if(Math.hypot(player.x - it.x - 0.5, player.y - it.y - 0.5) < 0.9){
+      // show message and let E pick up
+      showMessage(`Підійди і натисни E щоб взяти: ${it.desc}`, 2500);
+      // if player presses E while near, pick up handled in input
+    }
+  }
+}
+
+function pickNearby(){
+  for(let it of items){
+    if(!it.visible) continue;
+    if(Math.hypot(player.x - it.x - 0.5, player.y - it.y - 0.5) < 0.9){
+      inventory.push(it.type);
+      it.visible = false;
+      updateInventoryUI();
+      showMessage(`Взяла: ${it.desc}`,2000);
+      return;
+    }
+  }
+  // no item
+  showMessage('Немає нічого поруч, щоб взяти',1400);
+}
+
+function interact(){
+  // check door in front of player (tile in facing dir)
+  const dirX = Math.round(Math.cos(player.r));
+  const dirY = Math.round(Math.sin(player.r));
+  const tx = Math.floor(player.x + dirX*0.9);
+  const ty = Math.floor(player.y + dirY*0.9);
+  if(doorAt(tx,ty)){
+    // locked door -> require code or key
+    if(inventory.includes('key')){
+      showMessage('Використано ключ. Двері відкриті!',2000);
+      level[ty][tx] = 0; // unlock
+      return;
+    }
+    const code = prompt('Двері заблоковано. Введи код: (підказка в записці)');
+    if(code === '413'){
+      showMessage('Код правильний! Двері відкриті!',1800);
+      level[ty][tx] = 0;
+      return;
+    } else {
+      showMessage('Неправильний код! Монстр чує шум...',1800);
+      // monster alerted
+      monster.lastSeen = {x:player.x,y:player.y,t:Date.now()};
+      monster.state = 'chase';
+      return;
+    }
+  } else {
+    // else pickup
+    pickNearby();
+  }
+}
+
+/* ---------- Monster AI (simple) ---------- */
+function updateMonster(dt){
+  // if close to player => chase
+  const d = Math.hypot(monster.x - player.x, monster.y - player.y);
+  const sees = monsterSeesPlayer();
+  if(sees){
+    monster.state = 'chase';
+    monster.lastSeen = {x: player.x, y: player.y, t: Date.now()};
+  } else {
+    if(monster.state==='chase' && monster.lastSeen && (Date.now()-monster.lastSeen.t>8000)){
+      monster.state = 'patrol';
+    }
+  }
+
+  if(monster.state === 'chase'){
+    // move toward player (naive)
+    let dx = player.x - monster.x;
+    let dy = player.y - monster.y;
+    const len = Math.hypot(dx,dy);
+    if(len>0.01){
+      dx /= len; dy /= len;
+      // try move; if blocked, try small random sidestep
+      if(!moveEntity(monster, dx*dt*60, dy*dt*60)){
+        // sidestep
+        const ang = Math.atan2(dy,dx) + (Math.random()>0.5 ? 1 : -1) * Math.PI/2;
+        moveEntity(monster, Math.cos(ang)*dt*60, Math.sin(ang)*dt*60);
+      }
+    }
+  } else {
+    // patrol: simple back-and-forth horizontally
+    if(typeof monster._t === 'undefined') monster._t = 0;
+    monster._t += dt;
+    if(monster._t > 2.2){
+      monster.dir *= -1;
+      monster._t = 0;
+    }
+    moveEntity(monster, monster.dir*dt*20, 0);
+  }
+
+  // if monster touches player -> GAME OVER scare
+  if(Math.hypot(monster.x - player.x, monster.y - player.y) < 0.6){
+    triggerScreamer();
+  }
+}
+
+function monsterSeesPlayer(){
+  // simple LOS: if distance < 6 tiles and no wall in straight ray
+  const dx = player.x - monster.x, dy = player.y - monster.y;
+  const d = Math.hypot(dx,dy);
+  if(d > 6) return false;
+  // raycast in small steps
+  const steps = Math.ceil(d*10);
+  for(let i=1;i<=steps;i++){
+    const t = i/steps;
+    const sx = monster.x + dx * t;
+    const sy = monster.y + dy * t;
+    if(tileBlocked(Math.floor(sx), Math.floor(sy))) return false;
+  }
+  // if player has flashlight on, monster more likely to see
+  if(player.lightOn) return true;
+  // else small chance
+  return Math.random() < 0.6;
+}
+
+/* ---------- Rendering ---------- */
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const vw = canvas.width, vh = canvas.height;
+
+  // camera center on player
+  const camX = player.x * TILE - vw/2;
+  const camY = player.y * TILE - vh/2;
+
+  // draw tiles
+  for(let y=0;y<MAP_H;y++){
+    for(let x=0;x<MAP_W;x++){
+      const px = x*TILE - camX;
+      const py = y*TILE - camY;
+      if(px+TILE < 0 || py+TILE < 0 || px > vw || py > vh) continue;
+      if(level[y][x] === 1){
+        ctx.fillStyle = '#222';
+        ctx.fillRect(px,py,TILE,TILE);
+        ctx.fillStyle = '#111';
+        ctx.fillRect(px+4,py+4,TILE-8,TILE-8);
+      } else if(level[y][x] === 2){
+        ctx.fillStyle = '#3b2b2b';
+        ctx.fillRect(px,py,TILE,TILE);
+        ctx.fillStyle = '#663333';
+        ctx.fillRect(px+6,py+6,TILE-12,TILE-12);
+        ctx.fillStyle = '#cc9966';
+        ctx.fillRect(px+TILE-12,py+6,8, T ile?0);
+      } else {
+        // floor subtle
+        ctx.fillStyle = '#0b0b0b';
+        ctx.fillRect(px,py,TILE,TILE);
+      }
+    }
+  }
+
+  // draw items
+  for(let it of items){
+    if(!it.visible) continue;
+    const ix = (it.x+0.5)*TILE - camX;
+    const iy = (it.y+0.5)*TILE - camY;
+    ctx.fillStyle = it.type==='key' ? '#ffd24d' : (it.type==='battery' ? '#4dd2ff' : '#c992ff');
+    ctx.beginPath();
+    ctx.arc(ix, iy, TILE*0.16, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // draw player
+  const px = player.x*TILE - camX, py = player.y*TILE - camY;
+  // shadow under
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.beginPath();
+  ctx.ellipse(px,py+TILE*0.24,TILE*0.35,TILE*0.2,0,0,Math.PI*2);
+  ctx.fill();
+  // player body
+  ctx.fillStyle = '#88ccee';
+  ctx.beginPath();
+  ctx.arc(px,py,TILE*0.28,0,Math.PI*2);
+  ctx.fill();
+  // direction eye
+  ctx.fillStyle = '#002';
+  ctx.beginPath();
+  ctx.arc(px + Math.cos(player.r)*6, py + Math.sin(player.r)*6, 3,0,Math.PI*2);
+  ctx.fill();
+
+  // draw monster
+  const mx = monster.x*TILE - camX, my = monster.y*TILE - camY;
+  ctx.fillStyle = '#aa2222';
+  ctx.beginPath();
+  ctx.ellipse(mx,my,TILE*0.32,TILE*0.32,0,0,Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = 'black';
+  ctx.fillRect(mx-TILE*0.12, my - TILE*0.05, TILE*0.08, TILE*0.08);
+  ctx.fillRect(mx+TILE*0.04, my - TILE*0.05, TILE*0.08, TILE*0.08);
+
+  // darkness overlay + flashlight
+  if(darkness){
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.92)';
+    ctx.fillRect(0,0,vw,vh);
+    // clear a circle around player based on flashlight and battery
+    if(player.hasLight && player.lightOn){
+      // cone effect: radial gradient
+      const grad = ctx.createRadialGradient(px, py, TILE*0.2, px, py, TILE*2.6);
+      grad.addColorStop(0, 'rgba(255,255,240,0.95)');
+      grad.addColorStop(0.3, 'rgba(200,200,200,0.55)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(px, py, TILE*2.6, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+    } else {
+      // tiny ambient
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillStyle = 'rgba(0,0,0,0.06)';
+      ctx.beginPath();
+      ctx.arc(px, py, TILE*0.9, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.restore();
+  }
+
+  // UI: small indicator of monster if seen
+  if(monsterSeesPlayer()) {
+    ctx.fillStyle = 'rgba(255,0,0,0.8)';
+    ctx.beginPath();
+    ctx.arc(30, canvas.height - 30, 10, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+/* ---------- Screamer ---------- */
+let screamerPlaying = false;
+function triggerScreamer(){
+  if(screamerPlaying) return;
+  screamerPlaying = true;
+  // show full-screen scary image and sound
+  const overlay = document.createElement('div');
+  overlay.style.position='fixed';
+  overlay.style.inset='0';
+  overlay.style.background='black';
+  overlay.style.display='flex';
+  overlay.style.alignItems='center';
+  overlay.style.justifyContent='center';
+  overlay.style.zIndex='9999';
+
+  const img = document.createElement('img');
+  img.src = 'https://i.imgur.com/YFqW3z0.png';
+  img.style.maxWidth='90%';
+  img.style.maxHeight='90%';
+  overlay.appendChild(img);
+  document.body.appendChild(overlay);
+
+  // simple beep using WebAudio + scream sample (if available)
+  try {
+    const actx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = actx.createOscillator();
+    const g = actx.createGain();
+    o.type='sawtooth';
+    o.frequency.value = 150;
+    o.connect(g); g.connect(actx.destination);
+    g.gain.value = 0.0001;
+    o.start();
+    // ramp up
+    g.gain.exponentialRampToValueAtTime(0.7, actx.currentTime + 0.2);
+    setTimeout(()=> {
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + 0.3);
+      o.stop(actx.currentTime + 0.35);
+    }, 350);
+  } catch(e){ /* ignore audio errors */ }
+
+  setTimeout(()=> {
+    document.body.removeChild(overlay);
+    screamerPlaying = false;
+    // after screamer, reset game
+    showMessage('Тебе зловив монстр. Почни заново (R)', 3000);
+  }, 1600);
+}
+
+/* ---------- MAIN LOOP ---------- */
+function loop(ts){
+  if(!gameStarted) return;
+  const dt = Math.min((ts - lastTime)/1000, 0.05); lastTime = ts;
+  // input -> player movement
+  let dx = 0, dy = 0;
+  if(keys['w']||keys['arrowup']) dy -= 1;
+  if(keys['s']||keys['arrowdown']) dy += 1;
+  if(keys['a']||keys['arrowleft']) dx -= 1;
+  if(keys['d']||keys['arrowright']) dx += 1;
+  if(dx!==0 || dy!==0){
+    const len = Math.hypot(dx,dy);
+    dx/=len; dy/=len;
+    // rotate player angle
+    player.r = Math.atan2(dy,dx);
+    moveEntity(player, dx*dt*60, dy*dt*60);
+  }
+
+  // toggle flashlight F
+  if(keys['f'] && !this._fDown){
+    player.lightOn = !player.lightOn;
+    this._fDown = true;
+    showMessage(player.lightOn ? 'Ліхтар увімкнено' : 'Ліхтар вимкнено', 1200);
+  }
+  if(!keys['f']) this._fDown = false;
+
+  // interact E
+  if(keys['e'] && !this._eDown){
+    interact();
+    this._eDown = true;
+  }
+  if(!keys['e']) this._eDown = false;
+
+  // inventory toggle I
+  if(keys['i'] && !this._iDown){
+    const invDiv = document.getElementById('inventory');
+    invDiv.style.display = invDiv.style.display === 'block' ? 'none' : 'block';
+    this._iDown = true;
+  }
+  if(!keys['i']) this._iDown = false;
+
+  // restart R
+  if(keys['r'] && !this._rDown){
+    location.reload();
+    this._rDown = true;
+  }
+  if(!keys['r']) this._rDown = false;
+
+  // choose pickup with 'e' actually
+  // check item pickups hint
+  checkItemPickup();
+
+  // monster update
+  updateMonster(dt);
+
+  draw();
+  requestAnimationFrame(loop);
+}
+
+/* ---------- INITIAL UI HOOKS ---------- */
+updateInventoryUI();
+
+// If player presses E near item, pick up handled in pickNearby. We'll attach keydown too:
+window.addEventListener('keydown', (e)=>{
+  if(e.key.toLowerCase()==='e'){
+    pickNearby();
+  }
+});
+
+// adjust canvas on resize
+window.addEventListener('resize', ()=>{
+  canvas.width = Math.min(window.innerWidth - 20, TILE * MAP_W);
+  canvas.height = Math.min(window.innerHeight - 120, TILE * MAP_H);
+  draw();
+});
+
+</script>
